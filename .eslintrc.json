@@ -1,9 +1,27 @@
 {
-  "extends": ["react-app"],
   "env": {
     "browser": true,
-    "node": true,
-    "es6": true
+    "es2021": true
   },
-  "plugins": []
+  "extends": [
+    "eslint:recommended",
+    "plugin:react/recommended",
+    "plugin:security/recommended"
+  ],
+  "plugins": [
+    "react",
+    "security"
+  ],
+  "parserOptions": {
+    "ecmaFeatures": {
+      "jsx": true
+    },
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
 }
