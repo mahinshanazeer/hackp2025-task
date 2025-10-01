@@ -23,7 +23,7 @@ jobs:
 
       - name: Run ESLint Security Check
         run: |
-          npm install eslint eslint-plugin-security --save-dev
+          npm install eslint@lates eslint-plugin-security --save-dev
           npx eslint . --ext .js,.jsx --plugin security
 
       - name: Run npm audit
