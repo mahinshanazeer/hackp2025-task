@@ -116,11 +116,22 @@ jobs:
 
       - name: Prepare Discord variables
         run: |
-          SUMMARY_FILE="./semgrep/semgrep-summary.txt"
+          # Determine the correct summary file
+          if [ -f "./semgrep/semgrep-summary.txt" ]; then
+            SUMMARY_FILE="./semgrep/semgrep-summary.txt"
+          elif [ -f "./semgrep-summary.txt" ]; then
+            SUMMARY_FILE="./semgrep-summary.txt"
+          else
+            SUMMARY_FILE=""
+          fi
 
-          if [ -s "$SUMMARY_FILE" ]; then
+          if [ -n "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
             TOTAL_FINDINGS=$(wc -l < "$SUMMARY_FILE")
-            SUMMARY="$(head -n 15 "$SUMMARY_FILE")"
+            if [ "$TOTAL_FINDINGS" -le 15 ]; then
+              SUMMARY="$(cat "$SUMMARY_FILE")"
+            else
+              SUMMARY="$(head -n 15 "$SUMMARY_FILE")"
+            fi
             COLOR=15158332   # 🔴 Red
           else
             TOTAL_FINDINGS=0
@@ -128,6 +139,7 @@ jobs:
             COLOR=3066993    # 🟢 Green
           fi
 
+          # Export variables to environment
           echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
           echo "$SUMMARY" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
@@ -135,11 +147,9 @@ jobs:
           echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
           echo "SEMGRP_TOTAL=$TOTAL_FINDINGS" >> $GITHUB_ENV
 
-          # Add date/time
           NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
           echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
 
-          # Clickable commit link
           REPO_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
           echo "COMMIT_URL=$REPO_URL" >> $GITHUB_ENV
 
