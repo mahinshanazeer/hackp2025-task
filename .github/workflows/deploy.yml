@@ -67,7 +67,7 @@ jobs:
           directory: ./build
 
       - name: Notify Discord
-        uses: Ilshidur/action-discord@v0.3.2
+        uses: tsickert/discord-webhook@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           message: |
@@ -76,3 +76,6 @@ jobs:
             Commit: `${{ github.sha }}`
             Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
             Build & Deploy: `${{ job.status }}`
+
+
+            
