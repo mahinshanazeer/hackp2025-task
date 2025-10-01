@@ -99,7 +99,12 @@ jobs:
           echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
           echo "$SUMMARY" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
           echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
+
+          # Add date/time
+          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
+          echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
 
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -111,6 +116,7 @@ jobs:
             **Commit**: `${{ github.sha }}`
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
             **Deploy Status**: ${{ needs.build-and-deploy.result }}
+            **Date/Time**: `${{ env.RUN_DATETIME }}`
           text: |
             🔍 **Semgrep Findings (Top 15)**:
             ```bash
