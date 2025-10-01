@@ -5,6 +5,8 @@
   "homepage": "http://ahfarmer.github.io/calculator",
   "devDependencies": {
     "chai": "^4.2.0",
+    "eslint": "^5.16.0",
+    "eslint-plugin-security": "^3.0.1",
     "gh-pages": "^2.0.1",
     "prettier": "^1.17.1",
     "react-scripts": "^3.0.1"
