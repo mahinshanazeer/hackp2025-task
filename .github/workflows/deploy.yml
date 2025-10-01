@@ -40,12 +40,6 @@ jobs:
             echo "issues=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload Semgrep SARIF
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-sarif
-          path: semgrep.sarif
-
       - name: Upload Semgrep Summary
         uses: actions/upload-artifact@v4
         with:
@@ -120,7 +114,7 @@ jobs:
           name: semgrep-summary
           path: ./semgrep
 
-      - name: Prepare Semgrep summary
+      - name: Prepare Discord variables
         run: |
           SUMMARY_FILE="./semgrep/semgrep-summary.txt"
 
@@ -145,7 +139,7 @@ jobs:
           NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
           echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
 
-          # Create clickable commit URL
+          # Clickable commit link
           REPO_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
           echo "COMMIT_URL=$REPO_URL" >> $GITHUB_ENV
 
