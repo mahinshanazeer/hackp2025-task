@@ -1,43 +1,28 @@
-name: Build & Deploy React to Cloudflare Pages with Security Checks
+- name: Setup Node.js
+  uses: actions/setup-node@v3
+  with:
+    node-version: 24  # latest LTS
 
-on:
-  push:
-    branches:
-      - main 
+- name: Install dependencies
+  run: |
+    npm install eslint@latest eslint-plugin-security --save-dev
+    npm install
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+- name: Run ESLint
+  run: npx eslint ./src --ext .js,.jsx
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+- name: Run npm audit
+  run: npm audit --audit-level=high
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '24'
+- name: Build React app
+  run: |
+    export NODE_OPTIONS=--openssl-legacy-provider
+    npm run build
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run ESLint Security Check
-        run: |
-          npm install eslint@lates eslint-plugin-security --save-dev
-          npx eslint . --ext .js,.jsx --plugin security
-
-      - name: Run npm audit
-        run: npm audit --audit-level=high
-
-      - name: Build React app
-        run: |
-          export NODE_OPTIONS=--openssl-legacy-provider
-          npm run build
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: ${{ secrets.CF_PROJECT_NAME }}
-          directory: ./build
+- name: Deploy to Cloudflare Pages
+  uses: cloudflare/pages-action@v1
+  with:
+    apiToken: ${{ secrets.CF_API_TOKEN }}
+    accountId: ${{ secrets.CF_ACCOUNT_ID }}
+    projectName: ${{ secrets.CF_PROJECT_NAME }}
+    directory: ./build
