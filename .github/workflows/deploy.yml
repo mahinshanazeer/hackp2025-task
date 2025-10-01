@@ -67,8 +67,7 @@ jobs:
           directory: ./build
 
       - name: Notify Discord
-        if: always()
-        uses: Ilshidur/action-discord@v2
+        uses: Ilshidur/action-discord@v0.3.2
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           message: |
