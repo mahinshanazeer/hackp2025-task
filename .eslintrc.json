@@ -1,13 +1,9 @@
 {
+  "extends": ["react-app"],
   "env": {
     "browser": true,
     "node": true,
     "es6": true
   },
-  "extends": ["eslint:recommended", "plugin:security/recommended"],
-  "plugins": ["security"],
-  "rules": {
-    "no-console": "warn",
-    "security/detect-object-injection": "warn"
-  }
+  "plugins": []
 }
