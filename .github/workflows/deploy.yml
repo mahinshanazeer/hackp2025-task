@@ -69,10 +69,13 @@ jobs:
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
         with:
-          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          message: |
-            🚀 **Build & Deploy Report**
-            Branch: `${{ github.ref }}`
-            Commit: `${{ github.sha }}`
-            Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            Build & Deploy: `${{ job.status }}`
+          webhookUrl: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          username: "GitHub Actions"
+          title: "✅ Build Completed"
+          description: "React app deployed to Cloudflare Pages"
+          text: |
+            - **Branch**: `${{ github.ref_name }}`
+            - **Commit**: `${{ github.sha }}`
+            - **Semgrep Scan**: `${{ needs.semgrep-scan.outputs.scan-status }}`
+            - **Deploy Status**: `${{ job.status }}`
+          color: "3066993" # green
