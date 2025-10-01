@@ -16,7 +16,13 @@ jobs:
 
       - name: Install Semgrep
         run: |
-          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0.tar.gz | tar xz
+          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0.tar.gz -o semgrep.tar.gz
+          if file semgrep.tar.gz | grep -q 'gzip compressed data'; then
+            tar -xzf semgrep.tar.gz
+          else
+            echo "Error: semgrep.tar.gz is not a valid gzip file."
+            exit 1
+          fi
           sudo mv semgrep /usr/local/bin/
 
       - name: Run Semgrep scan
