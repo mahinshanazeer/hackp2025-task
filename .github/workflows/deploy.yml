@@ -28,6 +28,7 @@ jobs:
       - name: Run Semgrep scan
         id: semgrep
         run: |
+          # Run full Semgrep scan
           semgrep --config p/ci --error --sarif > semgrep.sarif || true
           semgrep --config p/ci > semgrep-summary.txt || true
 
@@ -51,6 +52,7 @@ jobs:
             echo "issues=true" >> $GITHUB_OUTPUT
           else
             echo "issues=false" >> $GITHUB_OUTPUT
+          fi
 
   # -------------------------
   # Build React App
@@ -110,7 +112,7 @@ jobs:
           description: |
             **Branch**: `${{ github.ref_name }}`
             **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
-            **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
+            **Semgrep Status**: `${{ needs.semgrep-scan.outputs.status }}`
             **Build Status**: ${{ needs.build-app.result }}
             **Deploy Status**: ${{ needs.deploy-app.result }}
             **Date/Time**: `$(date +"%Y-%m-%d %H:%M:%S %Z")`
