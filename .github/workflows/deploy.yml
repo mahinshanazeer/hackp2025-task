@@ -112,3 +112,4 @@ jobs:
             ${{ steps.semgrep_summary.outputs.text }}
             ```
           color: "${{ needs.semgrep-scan.outputs.semgrep-color }}"
+.github/workflows/deploy.yml
