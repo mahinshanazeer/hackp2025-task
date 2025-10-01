@@ -27,7 +27,11 @@ jobs:
 
       - name: Extract Semgrep summary
         run: |
-          jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt || echo "No issues found" > semgrep-summary.txt
+          if [ -s semgrep-report.json ]; then
+            jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt
+          else
+            echo "✅ No issues found" > semgrep-summary.txt
+          fi
 
       - name: Upload Semgrep summary artifact
         uses: actions/upload-artifact@v4
@@ -123,7 +127,13 @@ jobs:
 
       - name: Prepare Discord variables
         run: |
-          SEMGRP_SUMMARY=$(cat ./semgrep/semgrep-summary.txt)
+          SUMMARY_FILE="./semgrep/semgrep-summary.txt"
+          if [ -f "$SUMMARY_FILE" ]; then
+            SEMGRP_SUMMARY=$(cat "$SUMMARY_FILE")
+          else
+            SEMGRP_SUMMARY="✅ No issues found"
+          fi
+
           NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
           echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
           echo "$SEMGRP_SUMMARY" >> $GITHUB_ENV
