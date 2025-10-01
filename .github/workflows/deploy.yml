@@ -40,16 +40,22 @@ jobs:
             echo "issues=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload Semgrep results
+      - name: Upload Semgrep SARIF
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif
           path: semgrep.sarif
 
+      - name: Upload Semgrep Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-summary
+          path: semgrep-summary.txt
+
   # -------------------------
-  # Build & Deploy React App
+  # Build React App
   # -------------------------
-  build-and-deploy:
+  build-app:
     runs-on: ubuntu-latest
     needs: semgrep-scan
     if: needs.semgrep-scan.outputs.issues-found == 'false'
@@ -70,6 +76,28 @@ jobs:
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-build
+          path: ./build
+
+  # -------------------------
+  # Deploy React App
+  # -------------------------
+  deploy-app:
+    runs-on: ubuntu-latest
+    needs: build-app
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: react-build
+          path: ./build
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -83,15 +111,23 @@ jobs:
   # -------------------------
   notify-discord:
     runs-on: ubuntu-latest
-    needs: [semgrep-scan, build-and-deploy]
+    needs: [semgrep-scan, build-app, deploy-app]
     if: always()
     steps:
+      - name: Download Semgrep summary
+        uses: actions/download-artifact@v4
+        with:
+          name: semgrep-summary
+          path: .
+
       - name: Prepare Semgrep summary
         run: |
           if [ -s semgrep-summary.txt ]; then
+            TOTAL_FINDINGS=$(wc -l < semgrep-summary.txt)
             SUMMARY="$(head -n 15 semgrep-summary.txt)"
             COLOR=15158332   # 🔴 Red
           else
+            TOTAL_FINDINGS=0
             SUMMARY="✅ No issues found"
             COLOR=3066993    # 🟢 Green
           fi
@@ -101,10 +137,15 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
 
           echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
+          echo "SEMGRP_TOTAL=$TOTAL_FINDINGS" >> $GITHUB_ENV
 
           # Add date/time
           NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
           echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
+
+          # Create clickable commit URL
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          echo "COMMIT_URL=$REPO_URL" >> $GITHUB_ENV
 
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -113,9 +154,11 @@ jobs:
           title: "🚀 Build & Deploy Report"
           description: |
             **Branch**: `${{ github.ref_name }}`
-            **Commit**: `${{ github.sha }}`
+            **Commit**: [${{ github.sha }}](${{ env.COMMIT_URL }})
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            **Deploy Status**: ${{ needs.build-and-deploy.result }}
+            **Total Findings**: `${{ env.SEMGRP_TOTAL }}`
+            **Build Status**: ${{ needs.build-app.result }}
+            **Deploy Status**: ${{ needs.deploy-app.result }}
             **Date/Time**: `${{ env.RUN_DATETIME }}`
           text: |
             🔍 **Semgrep Findings (Top 15)**:
