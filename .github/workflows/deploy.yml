@@ -67,7 +67,7 @@ jobs:
           directory: ./build
 
       - name: Notify Discord
-        uses: bellingard/discord-action@v1
+        uses: rjstone/discord-webhook-notify@v2.2.1
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           message: |
