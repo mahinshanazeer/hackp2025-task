@@ -118,13 +118,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: semgrep-summary
-          path: .
+          path: ./semgrep
 
       - name: Prepare Semgrep summary
         run: |
-          if [ -s semgrep-summary.txt ]; then
-            TOTAL_FINDINGS=$(wc -l < semgrep-summary.txt)
-            SUMMARY="$(head -n 15 semgrep-summary.txt)"
+          SUMMARY_FILE="./semgrep/semgrep-summary.txt"
+
+          if [ -s "$SUMMARY_FILE" ]; then
+            TOTAL_FINDINGS=$(wc -l < "$SUMMARY_FILE")
+            SUMMARY="$(head -n 15 "$SUMMARY_FILE")"
             COLOR=15158332   # 🔴 Red
           else
             TOTAL_FINDINGS=0
