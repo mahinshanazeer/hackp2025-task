@@ -6,31 +6,26 @@ on:
       - main
 
 jobs:
-  # -------------------------
-  # Semgrep Security Scan Job
-  # -------------------------
   semgrep-scan:
     runs-on: ubuntu-latest
     outputs:
-      semgrep-result: ${{ steps.semgrep.outputs.result }}
+      scan-status: ${{ steps.semgrep.outputs.status }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Run Semgrep
+      - name: Install Semgrep
+        run: |
+          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0.tar.gz | tar xz
+          sudo mv semgrep /usr/local/bin/
+
+      - name: Run Semgrep scan
         id: semgrep
-        uses: returntocorp/semgrep-action@v2
-        with:
-          config: "p/ci" # or your custom config
-          fail-on-violation: false
+        run: |
+          semgrep --config p/ci --sarif > semgrep.sarif
+          echo "status=success" >> $GITHUB_ENV
         continue-on-error: true
 
-      - name: Capture Semgrep result
-        run: echo "result=${{ job.status }}" >> $GITHUB_OUTPUT
-
-  # -------------------------
-  # Build & Deploy Job
-  # -------------------------
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: semgrep-scan
@@ -59,9 +54,13 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
-      # -------------------------
-      # Discord Notification
-      # -------------------------
+      - name: Upload Semgrep results
+        if: needs.semgrep-scan.outputs.scan-status == 'success'
+        uses: actions/upload-artifact@v3
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+
       - name: Notify Discord
         if: always()
         uses: Ilshidur/action-discord@v2
@@ -71,5 +70,5 @@ jobs:
             🚀 **Build & Deploy Report**
             Branch: `${{ github.ref }}`
             Commit: `${{ github.sha }}`
-            Semgrep Scan: `${{ needs.semgrep-scan.outputs.semgrep-result }}`
+            Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
             Build & Deploy: `${{ job.status }}`
