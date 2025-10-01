@@ -1,14 +1,9 @@
 name: Build, Scan & Deploy React to Cloudflare Pages
-
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
-  # -------------------------
-  # Semgrep Security Scan
-  # -------------------------
   semgrep-scan:
     runs-on: ubuntu-latest
     outputs:
@@ -16,54 +11,60 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
       - name: Install Semgrep CLI
         run: |
           curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0 -o semgrep
           chmod +x semgrep
           sudo mv semgrep /usr/local/bin/
-
       - name: Run Semgrep scan
-        run: |
-          semgrep scan --config auto --json > semgrep-report.json || true
-
+        run: semgrep scan --config auto --json > semgrep-report.json || true
       - name: Extract Semgrep summary
         run: |
           jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt || echo "No issues found" > semgrep-summary.txt
-
-      - name: Upload Semgrep JSON report
+      - name: Upload Semgrep summary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-report
-          path: semgrep-report.json
-
+          name: semgrep-summary
+          path: semgrep-summary.txt
       - name: Set job status output
         id: set-status
         run: echo "status=completed" >> $GITHUB_OUTPUT
 
-  # -------------------------
-  # Build & Deploy React App
-  # -------------------------
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     needs: semgrep-scan
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
-
       - name: Install dependencies
         run: npm install
-
       - name: Build React app
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: ./build
 
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: ./build
+      - name: Download Semgrep summary
+        uses: actions/download-artifact@v4
+        with:
+          name: semgrep-summary
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -71,7 +72,6 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
-
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
         with:
@@ -84,7 +84,7 @@ jobs:
             **Deploy Status**: `${{ job.status }}`
           text: |
             🔍 **Semgrep Findings (Top 15)**:
-            ```bash
+            ```
             $(head -n 15 semgrep-summary.txt)
             ```
           color: "3447003"
