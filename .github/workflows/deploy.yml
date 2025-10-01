@@ -12,9 +12,7 @@ jobs:
   semgrep-scan:
     runs-on: ubuntu-latest
     outputs:
-      scan-status: ${{ steps.semgrep.outputs.status }}
-      top-findings: ${{ steps.semgrep.outputs.top-findings }}
-      issues-found: ${{ steps.check.outputs.issues }}
+      scan-status: ${{ steps.set-status.outputs.status }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -26,40 +24,29 @@ jobs:
           sudo mv semgrep /usr/local/bin/
 
       - name: Run Semgrep scan
-        id: semgrep
         run: |
-          semgrep --config p/ci --error --sarif > semgrep.sarif || true
-          semgrep --config p/ci > semgrep-summary.txt || true
+          semgrep scan --config auto --json > semgrep-report.json || true
 
-          if [ -s semgrep-summary.txt ]; then
-            TOP15=$(head -n 15 semgrep-summary.txt)
-          else
-            TOP15="✅ No issues found"
-          fi
-
-          echo "top-findings<<EOF" >> $GITHUB_OUTPUT
-          echo "$TOP15" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "status=completed" >> $GITHUB_OUTPUT
-
-      - name: Check for issues
-        id: check
+      - name: Extract Semgrep summary
         run: |
-          if [ -s semgrep-summary.txt ]; then
-            echo "issues=true" >> $GITHUB_OUTPUT
-          else
-            echo "issues=false" >> $GITHUB_OUTPUT
-          fi
+          jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt || echo "No issues found" > semgrep-summary.txt
+
+      - name: Upload Semgrep JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep-report.json
+
+      - name: Set job status output
+        id: set-status
+        run: echo "status=completed" >> $GITHUB_OUTPUT
 
   # -------------------------
-  # Build React App
+  # Build & Deploy React App
   # -------------------------
-  build-app:
+  build-and-deploy:
     runs-on: ubuntu-latest
     needs: semgrep-scan
-    if: needs.semgrep-scan.outputs.issues-found == 'false'
-    outputs:
-      build-result: ${{ steps.build-app-step.outcome }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -73,64 +60,17 @@ jobs:
         run: npm install
 
       - name: Build React app
-        id: build-app-step
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
-  # -------------------------
-  # Deploy React App
-  # -------------------------
-  deploy-app:
-    runs-on: ubuntu-latest
-    needs: build-app
-    if: ${{ needs.build-app.result != 'skipped' }}  # only run if build happened
-    outputs:
-      deploy-result: ${{ steps.deploy-app-step.outcome }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
       - name: Deploy to Cloudflare Pages
-        id: deploy-app-step
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
-
-  # -------------------------
-  # Discord Notification
-  # -------------------------
-  notify-discord:
-    runs-on: ubuntu-latest
-    needs: [semgrep-scan, build-app, deploy-app]
-    if: always()
-    steps:
-      - name: Prepare Discord notification
-        run: |
-          # Semgrep summary
-          if [ -s semgrep-summary.txt ]; then
-            SUMMARY="$(head -n 15 semgrep-summary.txt)"
-            COLOR=15158332   # 🔴 Red
-          else
-            SUMMARY="✅ No issues found"
-            COLOR=3066993    # 🟢 Green
-          fi
-
-          echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
-          echo "$SUMMARY" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
-
-          # Commit link
-          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
-          echo "COMMIT_URL=$REPO_URL" >> $GITHUB_ENV
-
-          # Date/time
-          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
-          echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
 
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -139,14 +79,12 @@ jobs:
           title: "🚀 Build & Deploy Report"
           description: |
             **Branch**: `${{ github.ref_name }}`
-            **Commit**: [${{ github.sha }}](${{ env.COMMIT_URL }})
+            **Commit**: `${{ github.sha }}`
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            **Build Status**: ${{ needs.build-app.result || 'skipped' }}
-            **Deploy Status**: ${{ needs.deploy-app.result || 'skipped' }}
-            **Date/Time**: `${{ env.RUN_DATETIME }}`
+            **Deploy Status**: `${{ job.status }}`
           text: |
             🔍 **Semgrep Findings (Top 15)**:
             ```bash
-            ${{ env.SEMGRP_SUMMARY }}
+            $(head -n 15 semgrep-summary.txt)
             ```
-          color: "${{ env.SEMGRP_COLOR }}"
+          color: "3447003"
