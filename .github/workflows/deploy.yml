@@ -1,9 +1,9 @@
-name: Build, Security Scan & Deploy React to Cloudflare Pages
+name: Build & Deploy React to Cloudflare Pages
 
 on:
   push:
     branches:
-      - main   # Trigger on main branch
+      - main
 
 jobs:
   build-and-deploy:
@@ -18,25 +18,30 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 24  # Latest Node LTS
+          node-version: 20
 
       # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Run ESLint security plugin separately (without changing CRA's ESLint)
-      - name: Run ESLint Security Scan
+      # Step 4: Run ESLint Security Scan (compatible with CRA v4)
+      - name: ESLint Security Scan
         run: |
           npm install eslint-plugin-security --save-dev
+          # Use CRA-compatible ESLint
           npx eslint --plugin security ./src --ext .js,.jsx || true
 
-      # Step 5: Build React app (CRA)
+      # Step 5: Run npm audit
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      # Step 6: Build React app
       - name: Build React app
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
-      # Step 6: Deploy build to Cloudflare Pages
+      # Step 7: Deploy to Cloudflare Pages
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
