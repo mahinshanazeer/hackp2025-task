@@ -5,13 +5,11 @@ on:
     branches: [ main ]
 
 jobs:
-  # -------------------------
-  # Semgrep Security Scan
-  # -------------------------
   semgrep-scan:
     runs-on: ubuntu-latest
     outputs:
       scan-status: ${{ steps.set-status.outputs.status }}
+      semgrep-color: ${{ steps.set-status.outputs.color }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -26,12 +24,20 @@ jobs:
         run: semgrep scan --config auto --json > semgrep-report.json || true
 
       - name: Extract Semgrep summary
+        id: set-status
         run: |
           if [ -s semgrep-report.json ]; then
-            jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt
+            jq -r '.results[] | "- \(.check_id): \(.path):\(.start.line) - \(.extra.message) [Severity: \(.extra.severity)]"' semgrep-report.json > semgrep-summary.txt
+            HIGH_SEV=$(jq '.results[] | select(.extra.severity=="ERROR")' semgrep-report.json || true)
+            if [ -n "$HIGH_SEV" ]; then COLOR=15158332; else COLOR=3066993; fi
+            STATUS="issues"
           else
             echo "✅ No issues found" > semgrep-summary.txt
+            COLOR=3066993
+            STATUS="clean"
           fi
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
 
       - name: Upload Semgrep summary artifact
         uses: actions/upload-artifact@v4
@@ -39,16 +45,11 @@ jobs:
           name: semgrep-summary
           path: semgrep-summary.txt
 
-      - name: Set job status output
-        id: set-status
-        run: echo "status=completed" >> $GITHUB_OUTPUT
-
-  # -------------------------
-  # Build React App
-  # -------------------------
-  build-app:
+  build:
     runs-on: ubuntu-latest
     needs: semgrep-scan
+    outputs:
+      build-status: ${{ steps.set-build-status.outputs.status }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -72,40 +73,21 @@ jobs:
           name: build
           path: ./build
 
-  # -------------------------
-  # Deploy React App
-  # -------------------------
-  deploy-app:
-    runs-on: ubuntu-latest
-    needs: build-app
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Set build-status output
+        id: set-build-status
+        run: echo "status=success" >> $GITHUB_OUTPUT
 
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      deploy-status: ${{ steps.deploy-step.outputs.status }}
+    steps:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: build
           path: ./build
-
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v2
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: ${{ secrets.CF_PROJECT_NAME }}
-          directory: ./build
-
-  # -------------------------
-  # Discord Notification
-  # -------------------------
-  notify-discord:
-    runs-on: ubuntu-latest
-    needs: [semgrep-scan, build-app, deploy-app]
-    if: always()
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
       - name: Download Semgrep summary
         uses: actions/download-artifact@v4
@@ -113,24 +95,64 @@ jobs:
           name: semgrep-summary
           path: ./semgrep
 
-      - name: Prepare Discord variables
+      - name: Deploy to Cloudflare Pages
+        id: deploy-step
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ secrets.CF_PROJECT_NAME }}
+          directory: ./build
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    steps:
+      - name: Download Semgrep summary
+        uses: actions/download-artifact@v4
+        with:
+          name: semgrep-summary
+          path: ./semgrep
+
+      - name: Download build artifact (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: ./build
+
+      - name: Prepare full deployment report
+        id: full_report
         run: |
-          SUMMARY_FILE="./semgrep/semgrep-summary.txt"
-          SUMMARY=$(cat "$SUMMARY_FILE")
-          COLOR=3066993  # 🟢 Green by default
-          if ! grep -q "✅ No issues found" "$SUMMARY_FILE"; then
-            COLOR=15158332  # 🔴 Red if issues exist
+          BRANCH="${GITHUB_REF##*/}"
+          COMMIT_SHORT="${GITHUB_SHA::7}"
+          COMMIT_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
+
+          if [ -f ./semgrep/semgrep-summary.txt ]; then
+            SEMGREP_SUMMARY=$(sed -n '1,500p' ./semgrep/semgrep-summary.txt)
+          else
+            SEMGREP_SUMMARY="No semgrep-summary artifact found"
           fi
 
-          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
-          REPO_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          BUILD_STATUS="${{ needs.build.result }}"
+          DEPLOY_STATUS="${{ needs.deploy.result }}"
 
-          echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
-          echo "$SUMMARY" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
-          echo "RUN_DATETIME=$NOW" >> $GITHUB_ENV
-          echo "COMMIT_URL=$REPO_URL" >> $GITHUB_ENV
+          REPORT_CONTENT=$(cat <<EOF
+Branch: ${BRANCH}
+Commit: ${COMMIT_SHORT} - ${COMMIT_URL}
+Date/Time: ${NOW}
+Build status: ${BUILD_STATUS}
+Deploy status: ${DEPLOY_STATUS}
+
+Semgrep Findings:
+${SEMGREP_SUMMARY}
+EOF
+)
+
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPORT_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -139,14 +161,14 @@ jobs:
           title: "🚀 Build & Deploy Report"
           description: |
             **Branch**: `${{ github.ref_name }}`
-            **Commit**: [${{ github.sha }}](${{ env.COMMIT_URL }})
+            **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            **Build Status**: ${{ needs.build-app.result }}
-            **Deploy Status**: ${{ needs.deploy-app.result }}
-            **Date/Time**: `${{ env.RUN_DATETIME }}`
+            **Build Status**: ${{ needs.build.result }}
+            **Deploy Status**: ${{ needs.deploy.result }}
+            **Date/Time**: `${{ steps.full_report.outputs.report }}`
           text: |
-            🔍 **Semgrep Findings**:
+            🔍 **Full Deployment Report**:
             ```
-            ${{ env.SEMGRP_SUMMARY }}
+            ${{ steps.full_report.outputs.report }}
             ```
-          color: "${{ env.SEMGRP_COLOR }}"
+          color: "${{ needs.semgrep-scan.outputs.semgrep-color }}"
