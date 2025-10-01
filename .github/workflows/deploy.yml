@@ -1,66 +1,3 @@
-name: Build, Scan & Deploy React to Cloudflare Pages
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  semgrep-scan:
-    runs-on: ubuntu-latest
-    outputs:
-      scan-status: ${{ steps.set-status.outputs.status }}
-      semgrep-color: ${{ steps.set-status.outputs.color }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Install Semgrep CLI
-        run: |
-          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0 -o semgrep
-          chmod +x semgrep
-          sudo mv semgrep /usr/local/bin/
-      - name: Run Semgrep scan
-        run: semgrep scan --config auto --json > semgrep-report.json || true
-      - name: Extract Semgrep summary
-        id: set-status
-        run: |
-          if [ -s semgrep-report.json ]; then
-            jq -r '.results[] | "- \(.check_id): \(.path):\(.start.line) - \(.extra.message) [Severity: \(.extra.severity)]"' semgrep-report.json > semgrep-summary.txt
-            HIGH_SEV=$(jq '.results[] | select(.extra.severity=="ERROR")' semgrep-report.json)
-            if [ -n "$HIGH_SEV" ]; then COLOR=15158332; else COLOR=3066993; fi
-          else
-            echo "✅ No issues found" > semgrep-summary.txt
-            COLOR=3066993
-          fi
-          echo "status=completed" >> $GITHUB_OUTPUT
-          echo "color=$COLOR" >> $GITHUB_OUTPUT
-      - name: Upload Semgrep summary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-summary
-          path: semgrep-summary.txt
-
-  build:
-    runs-on: ubuntu-latest
-    needs: semgrep-scan
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm install
-      - name: Build React app
-        run: |
-          export NODE_OPTIONS=--openssl-legacy-provider
-          npm run build
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: ./build
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
@@ -75,6 +12,43 @@ jobs:
         with:
           name: semgrep-summary
           path: ./semgrep
+
+      - name: Prepare full deployment report
+        id: full_report
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          COMMIT_SHORT="${GITHUB_SHA::7}"
+          COMMIT_URL="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
+
+          # Read semgrep summary (provide fallback)
+          if [ -f ./semgrep/semgrep-summary.txt ]; then
+            SEMGREP_SUMMARY=$(sed -n '1,200p' ./semgrep/semgrep-summary.txt)
+          else
+            SEMGREP_SUMMARY="No semgrep-summary artifact found"
+          fi
+
+          # Build and deploy status (build status available from needs.build.result)
+          BUILD_STATUS="${{ needs.build.result }}"
+          DEPLOY_STATUS="${{ job.status }}"
+
+          # Compose report (limit semgrep lines shown if very large)
+          cat > full-report.txt <<EOF
+Branch: ${BRANCH}
+Commit: ${COMMIT_SHORT} - ${COMMIT_URL}
+Date/Time: ${NOW}
+Build status: ${BUILD_STATUS}
+Deploy status: ${DEPLOY_STATUS}
+
+Semgrep Findings:
+${SEMGREP_SUMMARY}
+EOF
+
+          # Push multiline output for later steps
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat full-report.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -82,18 +56,7 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
-      - name: Prepare Semgrep summary for Discord
-        id: semgrep_summary
-        run: |
-          echo "text<<EOF" >> $GITHUB_OUTPUT
-          head -n 15 ./semgrep/semgrep-summary.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      - name: Prepare metadata
-        id: meta
-        run: |
-          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
-          echo "datetime=$NOW" >> $GITHUB_OUTPUT
-          echo "commit_url=https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" >> $GITHUB_OUTPUT
+
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
         with:
@@ -101,14 +64,15 @@ jobs:
           title: "🚀 Build & Deploy Report"
           description: |
             **Branch**: `${{ github.ref_name }}`
-            **Commit**: [${{ github.sha }}](${{ steps.meta.outputs.commit_url }})
+            **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
             **Build Status**: ${{ needs.build.result }}
             **Deploy Status**: ${{ job.status }}
-            **Date/Time**: `${{ steps.meta.outputs.datetime }}`
+            **Date/Time**: `${{ steps.full_report.outputs.report }}`
+
           text: |
-            🔍 **Semgrep Findings**:
+            🔍 **Full Deployment Report**:
             ```
-            ${{ steps.semgrep_summary.outputs.text }}
+            ${{ steps.full_report.outputs.report }}
             ```
           color: "${{ needs.semgrep-scan.outputs.semgrep-color }}"
