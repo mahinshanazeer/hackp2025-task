@@ -8,8 +8,6 @@ on:
 jobs:
   semgrep-scan:
     runs-on: ubuntu-latest
-    outputs:
-      scan-status: ${{ steps.semgrep.outputs.status }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -17,20 +15,20 @@ jobs:
       - name: Install Semgrep
         run: |
           curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0.tar.gz -o semgrep.tar.gz
-          if file semgrep.tar.gz | grep -q 'gzip compressed data'; then
-            tar -xzf semgrep.tar.gz
-          else
-            echo "Error: semgrep.tar.gz is not a valid gzip file."
-            exit 1
-          fi
+          tar -xzf semgrep.tar.gz
           sudo mv semgrep /usr/local/bin/
 
       - name: Run Semgrep scan
         id: semgrep
         run: |
           semgrep --config p/ci --sarif > semgrep.sarif
-          echo "status=success" >> $GITHUB_ENV
         continue-on-error: true
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v3
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
 
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -60,13 +58,6 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
-      - name: Upload Semgrep results
-        if: needs.semgrep-scan.outputs.scan-status == 'success'
-        uses: actions/upload-artifact@v3
-        with:
-          name: semgrep-sarif
-          path: semgrep.sarif
-
       - name: Notify Discord
         if: always()
         uses: Ilshidur/action-discord@v2
@@ -76,5 +67,5 @@ jobs:
             🚀 **Build & Deploy Report**
             Branch: `${{ github.ref }}`
             Commit: `${{ github.sha }}`
-            Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
+            Semgrep Scan: `${{ needs.semgrep-scan.result }}`
             Build & Deploy: `${{ job.status }}`
