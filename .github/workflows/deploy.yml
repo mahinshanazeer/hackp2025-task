@@ -1,3 +1,11 @@
+name: Build, Scan & Deploy React to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
   # -------------------------
   # Semgrep Security Scan
   # -------------------------
@@ -44,7 +52,7 @@
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: semgrep-scan
-    if: needs.semgrep-scan.outputs.issues-found == 'false'  # 🚨 Skip if issues found
+    if: needs.semgrep-scan.outputs.issues-found == 'false'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -71,7 +79,7 @@
           directory: ./build
 
   # -------------------------
-  # Discord Notification (always runs)
+  # Discord Notification
   # -------------------------
   notify-discord:
     runs-on: ubuntu-latest
