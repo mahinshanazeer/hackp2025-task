@@ -6,30 +6,38 @@ on:
       - main
 
 jobs:
+  # -------------------------
+  # Semgrep Security Scan
+  # -------------------------
   semgrep-scan:
     runs-on: ubuntu-latest
+    outputs:
+      scan-status: ${{ steps.semgrep.outputs.status }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install Semgrep
+      - name: Install Semgrep CLI
         run: |
-          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0.tar.gz -o semgrep.tar.gz
-          tar -xzf semgrep.tar.gz
+          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0 -o semgrep
+          chmod +x semgrep
           sudo mv semgrep /usr/local/bin/
 
       - name: Run Semgrep scan
         id: semgrep
         run: |
-          semgrep --config p/ci --sarif > semgrep.sarif
-        continue-on-error: true
+          semgrep --config p/ci --sarif > semgrep.sarif || true
+          echo "status=completed" >> $GITHUB_OUTPUT
 
       - name: Upload Semgrep results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif
           path: semgrep.sarif
 
+  # -------------------------
+  # Build & Deploy React App
+  # -------------------------
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: semgrep-scan
@@ -67,5 +75,5 @@ jobs:
             🚀 **Build & Deploy Report**
             Branch: `${{ github.ref }}`
             Commit: `${{ github.sha }}`
-            Semgrep Scan: `${{ needs.semgrep-scan.result }}`
+            Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
             Build & Deploy: `${{ job.status }}`
