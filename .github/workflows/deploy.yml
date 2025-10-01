@@ -1,36 +1,39 @@
-name: Build & Deploy React to Cloudflare Pages
+name: Build & Deploy React to Cloudflare Pages with Security Checks
 
 on:
   push:
     branches:
-      - main   # Trigger on main branch
+      - main 
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: '24'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Build the React app
+      - name: Run ESLint Security Check
+        run: |
+          npm install eslint eslint-plugin-security --save-dev
+          npx eslint . --ext .js,.jsx --plugin security
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
       - name: Build React app
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
-      # Step 5: Deploy build to Cloudflare Pages
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
