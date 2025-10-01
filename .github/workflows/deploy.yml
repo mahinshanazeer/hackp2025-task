@@ -66,16 +66,16 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
+      - name: Install curl
+        run: sudo apt-get update && sudo apt-get install -y curl
+
       - name: Notify Discord
         uses: tsickert/discord-webhook@v1
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          message: |
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          content: |
             🚀 **Build & Deploy Report**
             Branch: `${{ github.ref }}`
             Commit: `${{ github.sha }}`
             Semgrep Scan: `${{ needs.semgrep-scan.outputs.scan-status }}`
             Build & Deploy: `${{ job.status }}`
-
-
-            
