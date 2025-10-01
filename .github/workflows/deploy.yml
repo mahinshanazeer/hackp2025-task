@@ -1,18 +1,11 @@
-name: Build, Scan & Deploy React to Cloudflare Pages
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
   # -------------------------
   # Semgrep Security Scan
   # -------------------------
   semgrep-scan:
     runs-on: ubuntu-latest
     outputs:
-      scan-status: ${{ steps.set-status.outputs.status }}
+      scan-status: ${{ steps.semgrep.outputs.status }}
+      issues-found: ${{ steps.check.outputs.issues }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,22 +17,26 @@ jobs:
           sudo mv semgrep /usr/local/bin/
 
       - name: Run Semgrep scan
+        id: semgrep
         run: |
-          semgrep scan --config auto --json > semgrep-report.json || true
+          semgrep --config p/ci --error --sarif > semgrep.sarif || true
+          semgrep --config p/ci > semgrep-summary.txt || true
+          echo "status=completed" >> $GITHUB_OUTPUT
 
-      - name: Extract Semgrep summary
+      - name: Check for issues
+        id: check
         run: |
-          jq -r '.results[] | "\(.check_id): \(.path):\(.start.line) - \(.extra.message)"' semgrep-report.json > semgrep-summary.txt || echo "No issues found" > semgrep-summary.txt
+          if [ -s semgrep-summary.txt ]; then
+            echo "issues=true" >> $GITHUB_OUTPUT
+          else
+            echo "issues=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Upload Semgrep JSON report
+      - name: Upload Semgrep results
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-report
-          path: semgrep-report.json
-
-      - name: Set job status output
-        id: set-status
-        run: echo "status=completed" >> $GITHUB_OUTPUT
+          name: semgrep-sarif
+          path: semgrep.sarif
 
   # -------------------------
   # Build & Deploy React App
@@ -47,6 +44,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: semgrep-scan
+    if: needs.semgrep-scan.outputs.issues-found == 'false'  # 🚨 Skip if issues found
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -72,6 +70,29 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
+  # -------------------------
+  # Discord Notification (always runs)
+  # -------------------------
+  notify-discord:
+    runs-on: ubuntu-latest
+    needs: [semgrep-scan, build-and-deploy]
+    if: always()
+    steps:
+      - name: Prepare Semgrep summary
+        run: |
+          if [ -s semgrep-summary.txt ]; then
+            SUMMARY="$(head -n 15 semgrep-summary.txt)"
+            COLOR=15158332   # 🔴 Red
+          else
+            SUMMARY="✅ No issues found"
+            COLOR=3066993    # 🟢 Green
+          fi
+
+          echo "SEMGRP_SUMMARY<<EOF" >> $GITHUB_ENV
+          echo "$SUMMARY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          echo "SEMGRP_COLOR=$COLOR" >> $GITHUB_ENV
+
       - name: Send Discord notification
         uses: rjstone/discord-webhook-notify@v2.2.1
         with:
@@ -81,10 +102,10 @@ jobs:
             **Branch**: `${{ github.ref_name }}`
             **Commit**: `${{ github.sha }}`
             **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            **Deploy Status**: `${{ job.status }}`
+            **Deploy Status**: ${{ needs.build-and-deploy.result }}
           text: |
             🔍 **Semgrep Findings (Top 15)**:
             ```bash
-            $(head -n 15 semgrep-summary.txt)
+            ${{ env.SEMGRP_SUMMARY }}
             ```
-          color: "3447003"
+          color: "${{ env.SEMGRP_COLOR }}"
