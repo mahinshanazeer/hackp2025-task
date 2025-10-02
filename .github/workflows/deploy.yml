@@ -28,11 +28,12 @@ jobs:
       - name: Run Semgrep SAST
         id: semgrep
         run: |
+          export SEMGREP_NO_METRICS=1
           semgrep scan --config ci-secrets.yml --json --verbose > semgrep-results.json || true
 
 
-      # Notify Discord with Semgrep Results
-      - name: Notify Discord (Semgrep Results)
+      # Notify Discord with  Semgrep Results
+      - name: Notify Discord (Semgrep Results) 
         run: |
           findings=$(jq '.results | length' semgrep-results.json)
           summary="No issues found 🎉"
