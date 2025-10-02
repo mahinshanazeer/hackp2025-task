@@ -25,14 +25,20 @@ jobs:
           pip install semgrep
     
       # Run Semgrep (SAST)
-      - name: Run Semgrep SAST (Docker)
+      - name: Run Semgrep SAST (Docker, full repo scan)
         id: semgrep
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
             -e SEMGREP_NO_METRICS=1 \
             semgrep/semgrep:latest \
-            semgrep scan --config /src/ci-secrets.yml --json --verbose > /src/semgrep-results.json || true
+            semgrep scan \
+              --config "p/javascript,p/react,p/security-audit" \
+              --json \
+              --verbose \
+              --output /src/semgrep-results.json || true
+
+
 
       
 
