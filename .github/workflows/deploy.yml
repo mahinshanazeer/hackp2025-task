@@ -18,6 +18,12 @@ jobs:
         with:
           node-version: 20
 
+      # Install Semgrep
+      - name: Install Semgrep
+        run: |
+          pip install --upgrade pip
+          pip install semgrep
+    
       # Run Semgrep (SAST)
       - name: Run Semgrep SAST
         id: semgrep
