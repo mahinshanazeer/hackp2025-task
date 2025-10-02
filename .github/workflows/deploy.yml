@@ -41,6 +41,9 @@ jobs:
       - name: Notify Discord (Semgrep Results) 
         run: |
           findings=$(jq '.results | length' semgrep-results.json)
+          rules=$(jq '.scan.rules_count' semgrep-results.json // "N/A")
+          targets=$(jq '.scan.targets_count' semgrep-results.json // "N/A")
+
           summary="No issues found"
           color=3066993
           if [ "$findings" -gt 0 ]; then
@@ -50,8 +53,24 @@ jobs:
 
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \" Semgrep Scan Report\",\"color\": $color,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Summary\",\"value\":\"$summary\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{
+              \"username\": \"CI/CD Bot\",
+              \"embeds\": [{
+                \"title\": \"🛡 Semgrep Scan Report\",
+                \"color\": $color,
+                \"fields\": [
+                  {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
+                  {\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},
+                  {\"name\":\"Rules Run\",\"value\":\"$rules\"},
+                  {\"name\":\"Targets Scanned\",\"value\":\"$targets\"},
+                  {\"name\":\"Findings\",\"value\":\"$findings\"},
+                  {\"name\":\"Summary\",\"value\":\"$summary\"},
+                  {\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
+                ]
+              }]
+            }" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 
 
       # Notify Discord when build starts
