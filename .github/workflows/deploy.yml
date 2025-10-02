@@ -39,19 +39,18 @@ jobs:
           npm run build
 
       # 6. Run Semgrep SAST using Docker
-      - name: Run Semgrep SAST (Docker)
+      - name: Run Semgrep CI and upload results
         run: |
-          RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/src" \
-            -e SEMGREP_NO_METRICS=1 \
+            -e SEMGREP_APP_TOKEN=${{ secrets.SEMGREP_APP_TOKEN }} \
             semgrep/semgrep:latest \
-            semgrep scan \
+            semgrep ci \
               --config https://semgrep.dev/p/javascript \
               --config https://semgrep.dev/p/react \
               --config https://semgrep.dev/p/security-audit \
-              --json \
-              --output /src/semgrep-results.json || true
+              --json
+
 
       # 7. Debug Semgrep output (optional)
       - name: Debug Semgrep Output
