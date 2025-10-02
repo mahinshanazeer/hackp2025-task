@@ -18,12 +18,14 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run Semgrep SAST (Docker, full repo)
+
+      - name: Run Semgrep SAST (Docker, full repo with login)
         id: semgrep
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
             -e SEMGREP_NO_METRICS=1 \
+            -e SEMGREP_APP_TOKEN=${{ secrets.SEMGREP_APP_TOKEN }} \
             semgrep/semgrep:latest \
             semgrep scan \
               --config https://semgrep.dev/p/javascript \
@@ -31,6 +33,7 @@ jobs:
               --config https://semgrep.dev/p/security-audit \
               --json \
               --output /src/semgrep-results.json || true
+
 
 
   
