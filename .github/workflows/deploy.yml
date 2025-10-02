@@ -61,7 +61,7 @@ jobs:
           echo "Semgrep results file:"
           ls -la $GITHUB_WORKSPACE/semgrep-results.json || echo "File not found"
 
-      # 8️⃣ Notify Discord with Semgrep Results
+      # 8️⃣ Notify Discord with Semgrep Results (with language breakdown)
       - name: Notify Discord (Semgrep Results)
         if: always()
         run: |
@@ -72,10 +72,17 @@ jobs:
             exit 0
           fi
 
-          # Extract findings, rules, targets from JSON metadata
+          # Findings count
           findings=$(jq '.results | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          rules=$(jq '.scan.rules_count' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          targets=$(jq '.scan.targets_count' "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+          # Count unique rules triggered
+          rules=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+          # Total files scanned (all git-tracked files)
+          total_files=$(git ls-files | wc -l)
+
+          # Language breakdown
+          languages=$(jq -r '[.results[].extra.language] | map(select(.!=null)) | unique | join(", ")' "$RESULTS_FILE" 2>/dev/null || echo "N/A")
 
           # Summary & color
           summary="No issues found"
@@ -96,8 +103,9 @@ jobs:
                 \"fields\": [
                   {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
                   {\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},
-                  {\"name\":\"Rules Run\",\"value\":\"$rules\"},
-                  {\"name\":\"Targets Scanned\",\"value\":\"$targets\"},
+                  {\"name\":\"Rules Triggered\",\"value\":\"$rules\"},
+                  {\"name\":\"Total Files Scanned\",\"value\":\"$total_files\"},
+                  {\"name\":\"Languages Scanned\",\"value\":\"$languages\"},
                   {\"name\":\"Findings\",\"value\":\"$findings\"},
                   {\"name\":\"Summary\",\"value\":\"$summary\"},
                   {\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
