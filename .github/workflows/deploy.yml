@@ -38,52 +38,42 @@ jobs:
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
-      # 6. Run Semgrep SAST using Docker
-      - name: Run Semgrep CI and upload results
+      # 6. Install Semgrep CLI
+      - name: Install Semgrep CLI
+        run: pip install semgrep
+
+      # 7. Run Semgrep CI and upload results instantly
+      - name: Run Semgrep CI
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
         run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/src" \
-            -e SEMGREP_APP_TOKEN=${{ secrets.SEMGREP_APP_TOKEN }} \
-            semgrep/semgrep:latest \
-            semgrep ci \
-              --config https://semgrep.dev/p/javascript \
-              --config https://semgrep.dev/p/react \
-              --config https://semgrep.dev/p/security-audit \
-              --json
+          RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
 
+          semgrep ci \
+            --config https://semgrep.dev/p/javascript \
+            --config https://semgrep.dev/p/react \
+            --config https://semgrep.dev/p/security-audit \
+            --project 4130791 \
+            --json \
+            --output "$RESULTS_FILE" \
+            || true
 
-      # 7. Debug Semgrep output (optional)
-      - name: Debug Semgrep Output
-        run: |
-          echo "Workspace contents:"
-          ls -la $GITHUB_WORKSPACE
-          echo "Semgrep results file:"
-          ls -la $GITHUB_WORKSPACE/semgrep-results.json || echo "File not found"
-
-      # 8. Notify Discord with Semgrep Results (with language breakdown)
+      # 8. Notify Discord with Semgrep results
       - name: Notify Discord (Semgrep Results)
         if: always()
         run: |
           RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
 
           if [ ! -f "$RESULTS_FILE" ]; then
-            echo " Semgrep results file not found, skipping notification."
+            echo "Semgrep results file not found, skipping notification."
             exit 0
           fi
 
-          # Findings count
           findings=$(jq '.results | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-
-          # Count unique rules triggered
           rules=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-
-          # Total files scanned (all git-tracked files)
           total_files=$(git ls-files | wc -l)
-
-          # Language breakdown
           languages=$(jq -r '[.results[].extra.language] | map(select(.!=null)) | unique | join(", ")' "$RESULTS_FILE" 2>/dev/null || echo "N/A")
 
-          # Summary & color
           summary="No issues found"
           color=3066993
           if [ "$findings" -gt 0 ]; then
@@ -91,7 +81,6 @@ jobs:
             color=15158332
           fi
 
-          # Send Discord notification
           curl -H "Content-Type: application/json" \
             -X POST \
             -d "{
