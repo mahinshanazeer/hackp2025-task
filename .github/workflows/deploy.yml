@@ -26,11 +26,15 @@ jobs:
     
       # Run Semgrep (SAST)
       - name: Run Semgrep SAST
+        env:
+          SEMGREP_NO_METRICS: 1
         id: semgrep
         run: |
           export SEMGREP_NO_METRICS=1
-          semgrep scan --config ci-secrets.yml --json --verbose > semgrep-results.json 2>/dev/null || true
+          semgrep scan --config ci-secrets.yml --json --verbose > semgrep-results.json || true
+      
 
+  
       # Notify Discord with  Semgrep Results
       - name: Notify Discord (Semgrep Results) 
         run: |
