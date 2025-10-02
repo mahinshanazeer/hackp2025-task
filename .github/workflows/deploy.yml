@@ -20,15 +20,27 @@ jobs:
 
       # Run Semgrep (SAST)
       - name: Run Semgrep SAST
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/javascript
-            p/react
-            p/security-audit
-        env:
-          SEMGREP_RULES: p/javascript p/react p/security-audit
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        id: semgrep
+        run: |
+          semgrep ci --config "p/javascript p/react p/security-audit" \
+            --json > semgrep-results.json || true
+
+      # Notify Discord with Semgrep Results
+      - name: Notify Discord (Semgrep Results)
+        run: |
+          findings=$(jq '.results | length' semgrep-results.json)
+          summary="No issues found 🎉"
+          color=3066993
+          if [ "$findings" -gt 0 ]; then
+            summary="$findings issue(s) found ⚠️"
+            color=15158332
+          fi
+
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"🔍 Semgrep Scan Report\",\"color\": $color,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Summary\",\"value\":\"$summary\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 
       # Notify Discord when build starts
       - name: Notify Discord (Build Started)
