@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main  
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -17,6 +18,14 @@ jobs:
         with:
           node-version: 20
 
+      # Notify Discord when build starts
+      - name: Notify Discord (Build Started)
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"🚀 Build Started\",\"color\": 3447003,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       - name: Install dependencies
         run: npm install
 
@@ -24,10 +33,30 @@ jobs:
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
+
       - name: Deploy to Cloudflare Pages
+        id: deploy
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
+
+      # Notify Discord on success
+      - name: Notify Discord (Success)
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"✅ Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Success\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      # Notify Discord on failure
+      - name: Notify Discord (Failure)
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"❌ Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Failed\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
