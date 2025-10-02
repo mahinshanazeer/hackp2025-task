@@ -38,27 +38,26 @@ jobs:
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
-      # 6. Install Semgrep CLI
-      - name: Install Semgrep CLI
-        run: pip install semgrep
-
-      # 7. Run Semgrep CI and upload results instantly
-      - name: Run Semgrep CI
+      # 6. Run Semgrep CI using Docker and push results
+      - name: Run Semgrep CI (Docker)
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
         run: |
           RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
 
-          semgrep ci \
-            --config https://semgrep.dev/p/javascript \
-            --config https://semgrep.dev/p/react \
-            --config https://semgrep.dev/p/security-audit \
-            --project 4130791 \
-            --json \
-            --output "$RESULTS_FILE" \
-            || true
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -e SEMGREP_APP_TOKEN \
+            semgrep/semgrep:latest \
+            semgrep ci \
+              --config https://semgrep.dev/p/javascript \
+              --config https://semgrep.dev/p/react \
+              --config https://semgrep.dev/p/security-audit \
+              --project 4130791 \
+              --json \
+              --output /src/semgrep-results.json || true
 
-      # 8. Notify Discord with Semgrep results
+      # 7. Notify Discord with Semgrep results
       - name: Notify Discord (Semgrep Results)
         if: always()
         run: |
@@ -102,7 +101,7 @@ jobs:
             }" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # 9. Deploy to Cloudflare Pages
+      # 8. Deploy to Cloudflare Pages
       - name: Deploy to Cloudflare Pages
         id: deploy
         uses: cloudflare/pages-action@v1
@@ -112,7 +111,7 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
-      # 10. Notify Discord on deployment success
+      # 9. Notify Discord on deployment success
       - name: Notify Discord (Deployment Success)
         if: success()
         run: |
@@ -121,7 +120,7 @@ jobs:
             -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"✅ Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # 11. Notify Discord on deployment failure
+      # 10. Notify Discord on deployment failure
       - name: Notify Discord (Deployment Failed)
         if: failure()
         run: |
