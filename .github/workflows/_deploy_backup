@@ -98,7 +98,7 @@ jobs:
             -d "{
               \"username\": \"CI/CD Bot\",
               \"embeds\": [{
-                \"title\": \"🛡 Semgrep Scan Report\",
+                \"title\": \"Semgrep Scan Report\",
                 \"color\": $color,
                 \"fields\": [
                   {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
@@ -141,72 +141,3 @@ jobs:
             -X POST \
             -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"❌ Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-
-            # 12. Wait for site to become healthy (optional, retries)
-      - name: Wait for site to be reachable
-        run: |
-          SITE_URL="${{ secrets.SITE_URL }}"
-          echo "Waiting for $SITE_URL to respond (timeout 2m)..."
-          i=0
-          until curl -sSfL "$SITE_URL" -o /dev/null || [ $i -ge 24 ]; do
-            i=$((i+1))
-            sleep 5
-          done
-          if ! curl -sSfL "$SITE_URL" -o /dev/null; then
-            echo "ERROR: Site $SITE_URL is not reachable after wait period."
-            exit 1
-          fi
-
-      # 13. Run OWASP ZAP baseline scan (Docker)
-      - name: Run OWASP ZAP baseline scan
-        env:
-          SITE_URL: ${{ secrets.SITE_URL }}
-        run: |
-          mkdir -p zap-reports
-          echo "Running ZAP baseline against: $SITE_URL"
-          docker run --rm -v "$GITHUB_WORKSPACE/zap-reports":/zap/wrk/:rw \
-            owasp/zap2docker-stable \
-            zap-baseline.py -t "$SITE_URL" -r /zap/wrk/zap-report.html || true
-          ls -la zap-reports
-
-      # 14. Upload ZAP report artifact
-      - name: Upload ZAP report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: zap-report
-          path: zap-reports/
-
-      # 15. Notify Discord about ZAP scan (report link and status)
-      - name: Notify Discord (ZAP Scan)
-        if: always()
-        run: |
-          SITE_URL="${{ secrets.SITE_URL }}"
-          REPORT_NAME="zap-report/zap-report.html"
-          # If the report exists, artifact URL is not directly public; we notify that artifact is attached to the run.
-          if [ -f "$GITHUB_WORKSPACE/$REPORT_NAME" ]; then
-            status="ZAP baseline completed"
-            color=3066993
-            body="ZAP baseline scan completed for $SITE_URL. Download the report from the workflow artifacts (artifact name: zap-report)."
-          else
-            status="ZAP scan did not produce a report"
-            color=15158332
-            body="ZAP did not produce a report. Check the workflow logs for errors."
-          fi
-
-          curl -H "Content-Type: application/json" -X POST -d "{
-            \"username\": \"CI/CD Bot\",
-            \"embeds\": [{
-              \"title\": \"🕵️‍♂️ ZAP Baseline Scan\",
-              \"color\": $color,
-              \"fields\": [
-                {\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"},
-                {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"},
-                {\"name\": \"Target\", \"value\": \"${SITE_URL}\"},
-                {\"name\": \"Status\", \"value\": \"${status}\"},
-                {\"name\": \"Artifact\", \"value\": \"zap-report (attached to this run)\"},
-                {\"name\": \"Workflow Run\", \"value\": \"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
-              ]
-            }]
-          }" ${{ secrets.DISCORD_WEBHOOK_URL }}
-

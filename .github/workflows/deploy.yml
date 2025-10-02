@@ -98,7 +98,7 @@ jobs:
             -d "{
               \"username\": \"CI/CD Bot\",
               \"embeds\": [{
-                \"title\": \"🛡 Semgrep Scan Report\",
+                \"title\": \"Semgrep Scan Report\",
                 \"color\": $color,
                 \"fields\": [
                   {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
