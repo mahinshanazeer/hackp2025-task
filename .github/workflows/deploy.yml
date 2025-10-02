@@ -72,12 +72,12 @@ jobs:
             exit 0
           fi
 
-          # Extract findings, rules, files, targets from JSON
+          # Extract findings, rules, targets from JSON metadata
           findings=$(jq '.results | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          rules_detected=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          files_with_findings=$(jq '[.results[].path] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          targets_scanned=$(jq '[.results[].path] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
+          rules=$(jq '.scan.rules_count' "$RESULTS_FILE" 2>/dev/null || echo 0)
+          targets=$(jq '.scan.targets_count' "$RESULTS_FILE" 2>/dev/null || echo 0)
 
+          # Summary & color
           summary="No issues found"
           color=3066993
           if [ "$findings" -gt 0 ]; then
@@ -94,14 +94,13 @@ jobs:
                 \"title\": \"🛡 Semgrep Scan Report\",
                 \"color\": $color,
                 \"fields\": [
-                  {\"name\":\"Repository\",\"value\":\"${GITHUB_REPOSITORY}\"},
-                  {\"name\":\"Branch\",\"value\":\"${GITHUB_REF_NAME}\"},
-                  {\"name\":\"Rules with Findings\",\"value\":\"$rules_detected\"},
-                  {\"name\":\"Files with Findings\",\"value\":\"$files_with_findings\"},
-                  {\"name\":\"Targets Scanned\",\"value\":\"$targets_scanned\"},
-                  {\"name\":\"Findings Detected\",\"value\":\"$findings\"},
+                  {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
+                  {\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},
+                  {\"name\":\"Rules Run\",\"value\":\"$rules\"},
+                  {\"name\":\"Targets Scanned\",\"value\":\"$targets\"},
+                  {\"name\":\"Findings\",\"value\":\"$findings\"},
                   {\"name\":\"Summary\",\"value\":\"$summary\"},
-                  {\"name\":\"Workflow Run\",\"value\":\"[View Run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})\"}
+                  {\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
                 ]
               }]
             }" \
