@@ -1,80 +1,29 @@
-name: Build, Scan & Deploy React to Cloudflare Pages
+name: Build & Deploy React to Cloudflare Pages
 
 on:
   push:
-    branches: [ main ]
-
+    branches:
+      - main  
 jobs:
-  semgrep-scan:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    outputs:
-      scan-status: ${{ steps.set-status.outputs.status }}
-      semgrep-color: ${{ steps.set-status.outputs.color }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Install Semgrep CLI
-        run: |
-          curl -sSL https://github.com/returntocorp/semgrep/releases/download/v1.46.0/semgrep-linux-amd64-v1.46.0 -o semgrep
-          chmod +x semgrep
-          sudo mv semgrep /usr/local/bin/
-      - name: Run Semgrep scan
-        run: semgrep scan --config auto --json > semgrep-report.json || true
-      - name: Extract Semgrep summary
-        id: set-status
-        run: |
-          if [ -s semgrep-report.json ]; then
-            jq -r '.results[] | "- \(.check_id): \(.path):\(.start.line) - \(.extra.message) [Severity: \(.extra.severity)]"' semgrep-report.json > semgrep-summary.txt
-            HIGH_SEV=$(jq '.results[] | select(.extra.severity=="ERROR")' semgrep-report.json)
-            if [ -n "$HIGH_SEV" ]; then COLOR=15158332; else COLOR=3066993; fi
-          else
-            echo "✅ No issues found" > semgrep-summary.txt
-            COLOR=3066993
-          fi
-          echo "status=completed" >> $GITHUB_OUTPUT
-          echo "color=$COLOR" >> $GITHUB_OUTPUT
-      - name: Upload Semgrep summary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-summary
-          path: semgrep-summary.txt
 
-  build:
-    runs-on: ubuntu-latest
-    needs: semgrep-scan
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
       - name: Install dependencies
         run: npm install
+
       - name: Build React app
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: ./build
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build
-          path: ./build
-      - name: Download Semgrep summary
-        uses: actions/download-artifact@v4
-        with:
-          name: semgrep-summary
-          path: ./semgrep
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -82,34 +31,3 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
-      - name: Prepare Semgrep summary for Discord
-        id: semgrep_summary
-        run: |
-          echo "text<<EOF" >> $GITHUB_OUTPUT
-          head -n 15 ./semgrep/semgrep-summary.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      - name: Prepare metadata
-        id: meta
-        run: |
-          NOW=$(date +"%Y-%m-%d %H:%M:%S %Z")
-          echo "datetime=$NOW" >> $GITHUB_OUTPUT
-          echo "commit_url=https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" >> $GITHUB_OUTPUT
-      - name: Send Discord notification
-        uses: rjstone/discord-webhook-notify@v2.2.1
-        with:
-          webhookUrl: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          title: "🚀 Build & Deploy Report"
-          description: |
-            **Branch**: `${{ github.ref_name }}`
-            **Commit**: [${{ github.sha }}](${{ steps.meta.outputs.commit_url }})
-            **Semgrep Status**: `${{ needs.semgrep-scan.outputs.scan-status }}`
-            **Build Status**: ${{ needs.build.result }}
-            **Deploy Status**: ${{ job.status }}
-            **Date/Time**: `${{ steps.meta.outputs.datetime }}`
-          text: |
-            🔍 **Semgrep Findings**:
-            ```
-            ${{ steps.semgrep_summary.outputs.text }}
-            ```
-          color: "${{ needs.semgrep-scan.outputs.semgrep-color }}"
-.github/workflows/deploy.yml
