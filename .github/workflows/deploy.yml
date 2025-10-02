@@ -28,7 +28,7 @@ jobs:
       - name: Run Semgrep SAST
         id: semgrep
         run: |
-          semgrep scan --config "p/javascript p/react p/security-audit" --json --verbose > semgrep-results.json || true
+          semgrep scan --config ci-secrets.yml --json --verbose > semgrep-results.json || true
 
 
       # Notify Discord with Semgrep Results
