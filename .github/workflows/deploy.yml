@@ -42,42 +42,57 @@ jobs:
       - name: Run Semgrep SAST (Docker)
         run: |
           RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
+          STATS_FILE="$GITHUB_WORKSPACE/semgrep-stats.txt"
+
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/src" \
             -e SEMGREP_NO_METRICS=1 \
             semgrep/semgrep:latest \
-            semgrep scan \
-              --config https://semgrep.dev/p/javascript \
-              --config https://semgrep.dev/p/react \
-              --config https://semgrep.dev/p/security-audit \
-              --json \
-              --output /src/semgrep-results.json || true
+            sh -c "\
+              semgrep scan \
+                --config https://semgrep.dev/p/javascript \
+                --config https://semgrep.dev/p/react \
+                --config https://semgrep.dev/p/security-audit \
+                --json --output /src/semgrep-results.json || true; \
+              semgrep scan \
+                --config https://semgrep.dev/p/javascript \
+                --config https://semgrep.dev/p/react \
+                --config https://semgrep.dev/p/security-audit \
+                --stats > /src/semgrep-stats.txt \
+            "
 
       # 7️⃣ Debug Semgrep output (optional)
       - name: Debug Semgrep Output
         run: |
           echo "Workspace contents:"
           ls -la $GITHUB_WORKSPACE
-          echo "Semgrep results file:"
-          ls -la $GITHUB_WORKSPACE/semgrep-results.json || echo "File not found"
+          echo "Semgrep JSON results:"
+          cat $GITHUB_WORKSPACE/semgrep-results.json || echo "No results found"
+          echo "Semgrep stats:"
+          cat $GITHUB_WORKSPACE/semgrep-stats.txt || echo "No stats found"
 
       # 8️⃣ Notify Discord with Semgrep Results
       - name: Notify Discord (Semgrep Results)
         if: always()
         run: |
           RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
+          STATS_FILE="$GITHUB_WORKSPACE/semgrep-stats.txt"
 
           if [ ! -f "$RESULTS_FILE" ]; then
             echo "⚠️ Semgrep results file not found, skipping notification."
             exit 0
           fi
 
-          # Extract findings, rules, targets
+          # Parse JSON results
           findings=$(jq '.results | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
-          rules=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo "N/A")
-          targets=$(jq '[.results[].path] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo "N/A")
+          rules_detected=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
+          targets=$(jq '[.results[].path] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
 
-          # Summary & color
+          # Parse stats output for CLI-like numbers
+          rules_run=$(grep -oP '(?<=Rules run: )\d+' "$STATS_FILE" 2>/dev/null || echo "N/A")
+          targets_scanned=$(grep -oP '(?<=Targets scanned: )\d+' "$STATS_FILE" 2>/dev/null || echo "N/A")
+          parsed_lines=$(grep -oP '(?<=Parsed lines: ).*' "$STATS_FILE" 2>/dev/null || echo "N/A")
+
           summary="No issues found"
           color=3066993
           if [ "$findings" -gt 0 ]; then
@@ -96,9 +111,12 @@ jobs:
                 \"fields\": [
                   {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
                   {\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},
-                  {\"name\":\"Rules Run\",\"value\":\"$rules\"},
-                  {\"name\":\"Targets Scanned\",\"value\":\"$targets\"},
-                  {\"name\":\"Findings\",\"value\":\"$findings\"},
+                  {\"name\":\"Rules Run\",\"value\":\"$rules_run\"},
+                  {\"name\":\"Targets Scanned\",\"value\":\"$targets_scanned\"},
+                  {\"name\":\"Parsed Lines\",\"value\":\"$parsed_lines\"},
+                  {\"name\":\"Findings Detected\",\"value\":\"$findings\"},
+                  {\"name\":\"Rules with Findings\",\"value\":\"$rules_detected\"},
+                  {\"name\":\"Files with Findings\",\"value\":\"$targets\"},
                   {\"name\":\"Summary\",\"value\":\"$summary\"},
                   {\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
                 ]
