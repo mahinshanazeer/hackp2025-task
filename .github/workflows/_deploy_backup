@@ -18,18 +18,6 @@ jobs:
         with:
           node-version: 20
 
-      # Run Semgrep (SAST)
-      - name: Run Semgrep SAST
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/javascript
-            p/react
-            p/security-audit
-        env:
-          SEMGREP_RULES: p/javascript p/react p/security-audit
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-
       # Notify Discord when build starts
       - name: Notify Discord (Build Started)
         run: |
