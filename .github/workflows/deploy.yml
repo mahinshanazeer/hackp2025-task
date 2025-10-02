@@ -25,13 +25,15 @@ jobs:
           pip install semgrep
     
       # Run Semgrep (SAST)
-      - name: Run Semgrep SAST
-        env:
-          SEMGREP_NO_METRICS: 1
+      - name: Run Semgrep SAST (Docker)
         id: semgrep
         run: |
-          export SEMGREP_NO_METRICS=1
-          semgrep scan --config ci-secrets.yml --json --verbose > semgrep-results.json || true
+          docker run --rm \
+            -v "${{ github.workspace }}:/src" \
+            -e SEMGREP_NO_METRICS=1 \
+            semgrep/semgrep:latest \
+            semgrep scan --config /src/ci-secrets.yml --json --verbose > /src/semgrep-results.json || true
+
       
 
   
@@ -39,16 +41,16 @@ jobs:
       - name: Notify Discord (Semgrep Results) 
         run: |
           findings=$(jq '.results | length' semgrep-results.json)
-          summary="No issues found 🎉"
+          summary="No issues found"
           color=3066993
           if [ "$findings" -gt 0 ]; then
-            summary="$findings issue(s) found ⚠️"
+            summary="$findings issue(s) found"
             color=15158332
           fi
 
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"🔍 Semgrep Scan Report\",\"color\": $color,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Summary\",\"value\":\"$summary\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \" Semgrep Scan Report\",\"color\": $color,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Summary\",\"value\":\"$summary\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
 
@@ -57,7 +59,7 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"🚀 Build Started\",\"color\": 3447003,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \" Build Started\",\"color\": 3447003,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: Install dependencies
@@ -83,7 +85,7 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"✅ Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Success\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Success\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       # Notify Discord on failure
@@ -92,5 +94,5 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"❌ Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Failed\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \" Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Failed\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
