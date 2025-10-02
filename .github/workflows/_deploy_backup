@@ -1,24 +1,26 @@
-name: Build & Deploy React to Cloudflare Pages
+name: Build, SAST & Deploy React to Cloudflare Pages
 
 on:
   push:
     branches:
-      - main  
+      - main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      # Notify Discord when build starts
+      # 3. Notify Discord when build starts
       - name: Notify Discord (Build Started)
         run: |
           curl -H "Content-Type: application/json" \
@@ -26,14 +28,93 @@ jobs:
             -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"🚀 Build Started\",\"color\": 3447003,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
+      # 4. Install dependencies
       - name: Install dependencies
         run: npm install
 
+      # 5. Build React app
       - name: Build React app
         run: |
           export NODE_OPTIONS=--openssl-legacy-provider
           npm run build
 
+      # 6. Run Semgrep SAST using Docker
+      - name: Run Semgrep SAST (Docker)
+        run: |
+          RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -e SEMGREP_NO_METRICS=1 \
+            semgrep/semgrep:latest \
+            semgrep scan \
+              --config https://semgrep.dev/p/javascript \
+              --config https://semgrep.dev/p/react \
+              --config https://semgrep.dev/p/security-audit \
+              --json \
+              --output /src/semgrep-results.json || true
+
+      # 7. Debug Semgrep output (optional)
+      - name: Debug Semgrep Output
+        run: |
+          echo "Workspace contents:"
+          ls -la $GITHUB_WORKSPACE
+          echo "Semgrep results file:"
+          ls -la $GITHUB_WORKSPACE/semgrep-results.json || echo "File not found"
+
+      # 8. Notify Discord with Semgrep Results (with language breakdown)
+      - name: Notify Discord (Semgrep Results)
+        if: always()
+        run: |
+          RESULTS_FILE="$GITHUB_WORKSPACE/semgrep-results.json"
+
+          if [ ! -f "$RESULTS_FILE" ]; then
+            echo " Semgrep results file not found, skipping notification."
+            exit 0
+          fi
+
+          # Findings count
+          findings=$(jq '.results | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+          # Count unique rules triggered
+          rules=$(jq '[.results[].check_id] | unique | length' "$RESULTS_FILE" 2>/dev/null || echo 0)
+
+          # Total files scanned (all git-tracked files)
+          total_files=$(git ls-files | wc -l)
+
+          # Language breakdown
+          languages=$(jq -r '[.results[].extra.language] | map(select(.!=null)) | unique | join(", ")' "$RESULTS_FILE" 2>/dev/null || echo "N/A")
+
+          # Summary & color
+          summary="No issues found"
+          color=3066993
+          if [ "$findings" -gt 0 ]; then
+            summary="$findings issue(s) found"
+            color=15158332
+          fi
+
+          # Send Discord notification
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"username\": \"CI/CD Bot\",
+              \"embeds\": [{
+                \"title\": \"🛡 Semgrep Scan Report\",
+                \"color\": $color,
+                \"fields\": [
+                  {\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},
+                  {\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},
+                  {\"name\":\"Rules Triggered\",\"value\":\"$rules\"},
+                  {\"name\":\"Total Files Scanned\",\"value\":\"$total_files\"},
+                  {\"name\":\"Languages Scanned\",\"value\":\"$languages\"},
+                  {\"name\":\"Findings\",\"value\":\"$findings\"},
+                  {\"name\":\"Summary\",\"value\":\"$summary\"},
+                  {\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
+                ]
+              }]
+            }" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      # 9. Deploy to Cloudflare Pages
       - name: Deploy to Cloudflare Pages
         id: deploy
         uses: cloudflare/pages-action@v1
@@ -43,20 +124,89 @@ jobs:
           projectName: ${{ secrets.CF_PROJECT_NAME }}
           directory: ./build
 
-      # Notify Discord on success
-      - name: Notify Discord (Success)
+      # 10. Notify Discord on deployment success
+      - name: Notify Discord (Deployment Success)
         if: success()
         run: |
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"✅ Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Success\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"✅ Deployment Successful\",\"color\": 3066993,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # Notify Discord on failure
-      - name: Notify Discord (Failure)
+      # 11. Notify Discord on deployment failure
+      - name: Notify Discord (Deployment Failed)
         if: failure()
         run: |
           curl -H "Content-Type: application/json" \
             -X POST \
-            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"❌ Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Status\",\"value\":\"Failed\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
+            -d "{\"username\": \"CI/CD Bot\", \"embeds\": [{\"title\": \"❌ Deployment Failed\",\"color\": 15158332,\"fields\":[{\"name\":\"Repository\",\"value\":\"${{ github.repository }}\"},{\"name\":\"Branch\",\"value\":\"${{ github.ref_name }}\"},{\"name\":\"Workflow Run\",\"value\":\"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}]}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+
+            # 12. Wait for site to become healthy (optional, retries)
+      - name: Wait for site to be reachable
+        run: |
+          SITE_URL="${{ secrets.SITE_URL }}"
+          echo "Waiting for $SITE_URL to respond (timeout 2m)..."
+          i=0
+          until curl -sSfL "$SITE_URL" -o /dev/null || [ $i -ge 24 ]; do
+            i=$((i+1))
+            sleep 5
+          done
+          if ! curl -sSfL "$SITE_URL" -o /dev/null; then
+            echo "ERROR: Site $SITE_URL is not reachable after wait period."
+            exit 1
+          fi
+
+      # 13. Run OWASP ZAP baseline scan (Docker)
+      - name: Run OWASP ZAP baseline scan
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+        run: |
+          mkdir -p zap-reports
+          echo "Running ZAP baseline against: $SITE_URL"
+          docker run --rm -v "$GITHUB_WORKSPACE/zap-reports":/zap/wrk/:rw \
+            owasp/zap2docker-stable \
+            zap-baseline.py -t "$SITE_URL" -r /zap/wrk/zap-report.html || true
+          ls -la zap-reports
+
+      # 14. Upload ZAP report artifact
+      - name: Upload ZAP report artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-report
+          path: zap-reports/
+
+      # 15. Notify Discord about ZAP scan (report link and status)
+      - name: Notify Discord (ZAP Scan)
+        if: always()
+        run: |
+          SITE_URL="${{ secrets.SITE_URL }}"
+          REPORT_NAME="zap-report/zap-report.html"
+          # If the report exists, artifact URL is not directly public; we notify that artifact is attached to the run.
+          if [ -f "$GITHUB_WORKSPACE/$REPORT_NAME" ]; then
+            status="ZAP baseline completed"
+            color=3066993
+            body="ZAP baseline scan completed for $SITE_URL. Download the report from the workflow artifacts (artifact name: zap-report)."
+          else
+            status="ZAP scan did not produce a report"
+            color=15158332
+            body="ZAP did not produce a report. Check the workflow logs for errors."
+          fi
+
+          curl -H "Content-Type: application/json" -X POST -d "{
+            \"username\": \"CI/CD Bot\",
+            \"embeds\": [{
+              \"title\": \"🕵️‍♂️ ZAP Baseline Scan\",
+              \"color\": $color,
+              \"fields\": [
+                {\"name\": \"Repository\", \"value\": \"${{ github.repository }}\"},
+                {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"},
+                {\"name\": \"Target\", \"value\": \"${SITE_URL}\"},
+                {\"name\": \"Status\", \"value\": \"${status}\"},
+                {\"name\": \"Artifact\", \"value\": \"zap-report (attached to this run)\"},
+                {\"name\": \"Workflow Run\", \"value\": \"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}
+              ]
+            }]
+          }" ${{ secrets.DISCORD_WEBHOOK_URL }}
+
